@@ -1,4 +1,4 @@
-from numpy import random
+import pytensor.tensor as pt
 
 def dipole_field_pt(X, Y, Z, x_d, y_d, z_d, m_x, m_y, m_z):
     Rx = X - x_d

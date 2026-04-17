@@ -1,3 +1,4 @@
+import pytensor.tensor as pt
 
 def dipole_field(X, Y, Z, x_d, y_d, z_d, m_vec):
     """
