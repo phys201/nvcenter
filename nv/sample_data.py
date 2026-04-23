@@ -3,7 +3,7 @@ from pathlib import Path
 import xarray as xr
 
 
-def get_example_data_file_path(filename, data_dir='example_data'):
+def get_file_path(filename, data_dir='data'):
     # Path(__file__).resolve() returns the absolute path of the current module.
     # __file__ is a special variable path of the current file (here
     # data_io.py). We can use it as base path to construct other paths
@@ -15,11 +15,6 @@ def get_example_data_file_path(filename, data_dir='example_data'):
 
 
 def load_data(data_file):
-    if str(data_file).endswith('.txt'):
-        input_file = pd.read_csv(data_file, sep=' ')
-        output_data = input_file.to_xarray()
-    elif str(data_file).endswith('.nc'):
-        output_data = xr.open_dataset(data_file)
-    else:
-        raise TypeError('file must be a text or NetCDF file')
+    input_file = pd.read_csv(data_file)
+    output_data = input_file.to_xarray()
     return output_data
