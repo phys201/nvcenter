@@ -15,6 +15,15 @@ def get_file_path(filename, data_dir='data'):
 
 
 def load_data(data_file):
-    input_file = pd.read_csv(data_file)
-    output_data = input_file.to_xarray()
+    data_file = get_file_path(data_file, data_dir = 'data')
+    if not str(data_file).endswith('.csv'):
+        data_file = str(data_file) + '.csv'
+        input_file = pd.read_csv(str(data_file))
+        output_data = input_file.to_xarray()
+    elif str(data_file).endswith('.csv'):
+        input_file = pd.read_csv(str(data_file))
+        output_data = input_file.to_xarray()
+    else:
+        raise TypeError('file must be a CSV file')
     return output_data
+  
