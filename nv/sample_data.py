@@ -1,16 +1,29 @@
-from numpy import random
+import pandas as pd
+from pathlib import Path
+import xarray as xr
 
-def mean_fluorescence_pt(X, Y, Z, x_d, y_d, z_d,
-                         m_x, m_y, m_z,
-                         beta0, C, Gamma, delta0, n_vec):
-    
-    Bx, By, Bz = dipole_field_pt(X, Y, Z, x_d, y_d, z_d, m_x, m_y, m_z)
 
-    nx, ny, nz = n_vec
-    B_par = nx * Bx + ny * By + nz * Bz
+def get_file_path(filename, data_dir='data'):
+    # Path(__file__).resolve() returns the absolute path of the current module.
+    # __file__ is a special variable path of the current file (here
+    # data_io.py). We can use it as base path to construct other paths
+    # that should end up correct on other machines or when the package is
+    # installed
+    module_directory = Path(__file__).resolve().parent
+    data_path = Path(module_directory, data_dir, filename)
+    return data_path
 
-    Delta = delta0 - B_par
-    L = 1.0 / (1.0 + (Delta / Gamma)**2)
-    mu = beta0 * (1.0 - C * L)
 
-    return mu, B_par, Delta
+def load_data(data_file):
+    data_file = get_file_path(data_file, data_dir = 'data')
+    if not str(data_file).endswith('.csv'):
+        data_file = str(data_file) + '.csv'
+        input_file = pd.read_csv(str(data_file))
+        output_data = input_file.to_xarray()
+    elif str(data_file).endswith('.csv'):
+        input_file = pd.read_csv(str(data_file))
+        output_data = input_file.to_xarray()
+    else:
+        raise TypeError('file must be a CSV file')
+    return output_data
+  
