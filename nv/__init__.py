@@ -4,3 +4,5 @@ from nv.mean_fluorescence import mean_fluorescence
 from nv.mean_fluorescence_pt import mean_fluorescence_pt
 from nv.sample_data import get_file_path
 from nv.sample_data import load_data
+from nv.vonMise import vonMisesPosterior
+
