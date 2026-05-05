@@ -3,15 +3,21 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nvcenter_bchyi"
-version = "0.0.1"
+name = "nvcenter"
+version = "1.0.0"
 authors = [
-  { name="Brandon Chyi", email="bchyi@g.harvard.edu" },
-{ name="Addison NewRingeisen", email="addison_newringeisen@g.harvard.edu" }
+    {name="Brandon Chyi", email="bchyi@g.harvard.edu" },
+    {name="Addison NewRingeisen", email="addison_newringeisen@g.harvard.edu" }
 ]
 description = "A package to infer parameters of an NV ODMR Contour Scan"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "matplotlib.pyplot",
+    "pymc",
+    "arviz"
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -23,7 +29,7 @@ license-files = ["LICENSE"]
 Homepage = "https://github.com/phys201/nvcenter"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "nv"}
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["nv"]
