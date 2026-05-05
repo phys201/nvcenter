@@ -14,7 +14,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
-    "matplotlib.pyplot",
+    "pytensor",
     "pymc",
     "arviz"
 ]
