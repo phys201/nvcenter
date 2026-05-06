@@ -46,9 +46,6 @@ def dipole_field(X, Y, Z, x_d, y_d, z_d, m_vec):
 
     return Bx, By, Bz # will now be in Tesla
 
-GAMMA_NV_MHZ_PER_T = 28024.95138616912 # MHz/T
-D_NV_MHZ = 2870.0 # MHz
-
 def mean_fluorescence_dipole(
     X, Y, Z, 
     x_d, y_d, z_d, 
@@ -116,6 +113,42 @@ def mean_fluorescence_dipole(
 
     lorentzian = 1.0 / (1.0 + (Delta/Gamma)**2)
     mu = beta0 * (1.0 - C*lorentzian)
+
+    return mu, B_par, Delta
+
+def dipole_field_pt(X, Y, Z, x_d, y_d, z_d, m_x, m_y, m_z):
+    Rx = X - x_d
+    Ry = Y - y_d
+    Rz = Z - z_d
+
+    R2 = Rx**2 + Ry**2 + Rz**2
+    R2 = pt.maximum(R2, 1e-30)
+    R = pt.sqrt(R2)
+
+    m_dot_R = m_x * Rx + m_y * Ry + m_z * Rz
+
+    Bx = MU0_OVER_4PI * (3.0 * m_dot_R * Rx / R**5 - m_x / R**3)
+    By = MU0_OVER_4PI * (3.0 * m_dot_R * Ry / R**5 - m_y / R**3)
+    Bz = MU0_OVER_4PI * (3.0 * m_dot_R * Rz / R**5 - m_z / R**3)
+
+    return Bx, By, Bz
+
+
+def mean_fluorescence_dipole_pt(X, Y, Z, x_d, y_d, z_d,
+                         m_x, m_y, m_z,
+                         beta0, C, Gamma, f_mw, n_vec,
+                        branch_sign=-1):
+    
+    Bx, By, Bz = dipole_field_pt(X, Y, Z, x_d, y_d, z_d, m_x, m_y, m_z)
+
+    nx, ny, nz = n_vec
+    B_par = nx * Bx + ny * By + nz * Bz
+
+    f_nv = D_NV_MHZ + branch_sign * GAMMA_NV_MHZ_PER_T * B_par
+    Delta = f_mw - f_nv
+    
+    L = 1.0 / (1.0 + (Delta / Gamma)**2)
+    mu = beta0 * (1.0 - C * L)
 
     return mu, B_par, Delta
     
@@ -188,56 +221,6 @@ def mean_fluorescence_prism_pt(X, Y, Z,
     mu = beta0 * (1.0 - C * L)
 
     return mu, B_par, Delta
-
-def simulate_data(x_d_true = 1e-6, y_d_true = 1e-6, z_d_true = 1e-6, m_dir = [0,1,1], m_mag_true = 3e-16, 
-                  n_vec_true = [0,0,1], beta0_true = 145.0, C_true = 0.30, Gamma_true = 40.0, f_mw_true = 2770.0, 
-                  branch_sign_true = -1, sigma_true = 2.5):
-
-    # ---------------------------------------
-    # Define some set parameters for the scan
-    # ---------------------------------------
-    
-    n_pix = 45
-    vx = np.linspace(30.0, 50.0, n_pix)
-    vy = np.linspace(30.0, 50.0, n_pix)
-    
-    VX, VY = np.meshgrid(vx, vy)
-    
-    # ---------------------------------------
-    # We have a known volt -> um conversion
-    # ---------------------------------------
-    volt_to_m = 0.02e-6
-    X = VX * volt_to_m
-    Y = VY * volt_to_m
-    
-    # ---------------------------------------
-    # Our third dimension will be the image data
-    # ---------------------------------------
-    Z = np.zeros_like(X)
-    
-    m_dir = np.array(m_dir)
-    m_dir=m_dir/np.linalg.norm(m_dir)
-    n_vec_true = np.array(n_vec_true)
-    m_vec_true = m_mag_true * m_dir
-
-    mu_true, Bpar_true, Delta_true = mean_fluorescence_dipole(
-    X, Y, Z,
-    x_d_true, y_d_true, z_d_true,
-    m_vec_true,
-    n_vec_true,
-    beta0_true,
-    C_true,
-    Gamma_true,
-    f_mw_true,
-    branch_sign_true)
-
-    # And now draw noisy observations
-    rng = np.random.default_rng(1)
-    y_sim = rng.normal(loc=mu_true, scale=sigma_true, size=mu_true.shape)
-
-    extents =[vx.min(), vx.max(), vy.max(), vy.min()]
-    
-    return y_sim, extents
 
 def rectangular_prism_posterior(data, extents):
     
@@ -351,7 +334,8 @@ def rectangular_prism_posterior(data, extents):
         )
     return full_prism_inference_model
 
-def dipole_posterior(data, extents):
+def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1):
+    
     Ny, Nx = data.shape
     x_min, x_max, y_min, y_max = extents[-4:]
     x_volt = np.linspace(x_min, x_max, Nx)
@@ -364,18 +348,19 @@ def dipole_posterior(data, extents):
     X_um = X_volt * volt_to_um
     Y_um = Y_volt * volt_to_um
     Z_um = np.zeros_like(X_um, dtype=float)
-    
+
     with pm.Model() as nv_dipole_model:
 
-        X_data = pm.Data("X_data", X.astype("float64"))
-        Y_data = pm.Data("Y_data", Y.astype("float64"))
+        X_data = pm.Data("X_data", X_um.astype("float64"))
+        Y_data = pm.Data("Y_data", Y_um.astype("float64"))
     
-        Z_data = pm.Data("Z_data", Z.astype("float64"))
+        Z_data = pm.Data("Z_data", Z_um.astype("float64"))
     
-        y_out = pm.Data("y_sim", y_sim.astype("float64"))
-    
+        y_out = pm.Data("y_sim", data.astype("float64"))
+        ymean=np.mean(data)
+        
         # Giving the model something easy to work with initially...
-        z_d_um = pm.Normal("z_d_um", mu=0.078, sigma=0.05)
+        z_d_um = pm.Uniform("z_d_um", lower=0.5, upper=2)
         x_d_um = pm.Uniform("x_d_um", lower=0.55, upper=1.05)
         y_d_um = pm.Uniform("y_d_um", lower=0.55, upper=1.05)
     
@@ -384,28 +369,66 @@ def dipole_posterior(data, extents):
         x_d = x_d_um * 1e-6
         y_d = y_d_um * 1e-6
     
+        mmag=pm.Exponential("mmag", scale= 1e-14)
+        phi=pm.VonMises("phi", mu=0, kappa=20)
+        mz= pm.Deterministic("mz",np.cos(phi)*mmag)
+        theta=pm.Uniform("theta", lower=0, upper=2*np.pi)
+        mx= pm.Deterministic("mx",mmag*np.cos(theta)*np.sin(phi))
+        my=pm.Deterministic("my", mmag*np.sin(theta)*np.sin(phi))
+
+        # Our known NV axis
+        n_vec_true = np.array([0.0, 0, 1.00])
+        
         # Take average count from data set as guess
-        beta0 = pm.Normal("beta0", mu=float(np.mean(y_sim)), sigma=10.0)
+        beta0 = pm.Normal("beta0", ymean, sigma=10.0)
     
         # From 0-1, average of 0.3, weighted towards lower values
-        C = pm.Beta("C", alpha=2.0, beta=5.0)
+        C = pm.TruncatedNormal("C",mu=0.2, sigma=0.1, lower=0.01, upper=1.0)
     
         # Relatively well known parameter from prior ESR scans
-        Gamma = pm.Exponential("Gamma", lam=1/40.0)
+        Gamma = pm.Normal("Gamma", mu=16.5, sigma=1)
     
+        noise=pm.Uniform("noise", lower=0, upper=10)
         # implement the model using the known dipole parameters
         mu_model, B_par, Delta = mean_fluorescence_dipole_pt(
             X_data, Y_data, Z_data,
             x_d, y_d, z_d,
-            m_vec_true[0], m_vec_true[1], m_vec_true[2],
+            mx, my, mz,
             beta0, C, Gamma, f_mw_true,
             n_vec_true,
-            branch_sign=branch_sign_true
+            branch_sign
         )
     
-        pm.Normal("y_like", mu=mu_model, sigma=sigma_true, observed=y_out)
+        pm.StudentT("y_like", mu=mu_model,nu=1, sigma=noise, observed=y_out)
 
     return nv_dipole_model
+
+def simulate_data(x_d_true = 1e-6, y_d_true = 1e-6, z_d_true = 1e-6, m_dir = [0,1,1], m_mag_true = 3e-16, 
+                  n_vec_true = [0,0,1], beta0_true = 145.0, C_true = 0.30, Gamma_true = 40.0, f_mw_true = 2770.0, 
+                  branch_sign_true = -1, sigma_true = 2.5):
+    m_dir = np.array(m_dir)
+    m_dir=m_dir/np.linalg.norm(m_dir)
+    n_vec_true = np.array(n_vec_true)
+    m_vec_true = m_mag_true * m_dir
+
+    mu_true, Bpar_true, Delta_true = mean_fluorescence_dipole(
+    X, Y, Z,
+    x_d_true, y_d_true, z_d_true,
+    m_vec_true,
+    n_vec_true,
+    beta0_true,
+    C_true,
+    Gamma_true,
+    f_mw_true,
+    branch_sign_true)
+
+    # And now draw noisy observations
+    rng = np.random.default_rng(1)
+    y_sim = rng.normal(loc=mu_true, scale=sigma_true, size=mu_true.shape)
+
+    extents =[vx.min(), vx.max(), vy.max(), vy.min()]
+    
+    return y_sim, extents
 
 def Posterior(data, extents, magnet_geometry="rectangular-prism"):
     if magnet_geometry=="rectangular-prism":
