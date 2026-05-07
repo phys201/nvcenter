@@ -334,7 +334,7 @@ def rectangular_prism_posterior(data, extents):
         )
     return full_prism_inference_model
 
-def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1):
+def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1, mdir=[0,0,1]):
     
     Ny, Nx = data.shape
     x_min, x_max, y_min, y_max = extents[-4:]
@@ -349,6 +349,15 @@ def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1):
     Y_um = Y_volt * volt_to_um
     Z_um = np.zeros_like(X_um, dtype=float)
 
+    y_d_mean = np.mean(Y_um)
+    x_d_mean = np.mean(X_um)
+        # ---------------------------------------
+    # Coordinate prep - guessing the center of scan
+    # ---------------------------------------
+    x_guess_um = float(X_um.mean())
+    y_guess_um = float(Y_um.mean())
+    Z_um = np.zeros_like(X_um)
+    
     with pm.Model() as nv_dipole_model:
 
         X_data = pm.Data("X_data", X_um.astype("float64"))
@@ -356,41 +365,60 @@ def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1):
     
         Z_data = pm.Data("Z_data", Z_um.astype("float64"))
     
-        y_out = pm.Data("y_sim", data.astype("float64"))
+        y_out = pm.Data("y_out", data.astype("float64"))
         ymean=np.mean(data)
         
-        # Giving the model something easy to work with initially...
-        z_d_um = pm.Uniform("z_d_um", lower=0.5, upper=2)
-        x_d_um = pm.Uniform("x_d_um", lower=0.55, upper=1.05)
-        y_d_um = pm.Uniform("y_d_um", lower=0.55, upper=1.05)
+        # ---------------------------------------
+        # In-plane dipole position
+        # ---------------------------------------
+        x_d_um = pm.Normal("x_d_um", mu=x_guess_um, sigma=0.1)
+        y_d_um = pm.Normal("y_d_um", mu=y_guess_um, sigma=0.1)
+    
+        x_d = x_d_um * 1e-6
+        y_d = y_d_um * 1e-6
+    
+        # ---------------------------------------
+        # standoff height
+        # mean guess determined from experiment parameters
+        # log to keep positive and match scaling
+        # ---------------------------------------
+        log_h_d_um = pm.Normal("log_h_d_um", mu=np.log(3), sigma=0.20)
+        h_d_um = pm.Deterministic("h_d_um", pt.exp(log_h_d_um))
+        z_d_um = -h_d_um * 1e-6
     
         # and converting to um for physical meaning
         z_d = -z_d_um * 1e-6
         x_d = x_d_um * 1e-6
         y_d = y_d_um * 1e-6
-    
-        mmag=pm.Exponential("mmag", scale= 1e-14)
-        phi=pm.VonMises("phi", mu=0, kappa=20)
-        mz= pm.Deterministic("mz",np.cos(phi)*mmag)
-        theta=pm.Uniform("theta", lower=0, upper=2*np.pi)
-        mx= pm.Deterministic("mx",mmag*np.cos(theta)*np.sin(phi))
-        my=pm.Deterministic("my", mmag*np.sin(theta)*np.sin(phi))
 
-        # Our known NV axis
-        n_vec_true = np.array([0.0, 0, 1.00])
+        m_dir=np.array(mdir)
+        log_m_mag = pm.Normal("log_m_mag", mu=np.log(8e-14), sigma=0.25)
+        mmag = pm.Deterministic("m_mag", pt.exp(log_m_mag))
+
+        mx = mmag * m_dir[0]
+        my = mmag * m_dir[1]
+        mz = mmag * m_dir[2]
         
-        # Take average count from data set as guess
-        beta0 = pm.Normal("beta0", ymean, sigma=10.0)
+        # Our known NV axis
+        n_vec_true = np.array([-1.0, -1.0, 1.0]) / np.sqrt(3.0)
+        
+           # ---------------------------------------
+        # Spectroscopy priors
+        # FWHM = 16.5 MHz
+        # C = 20%
+        # ---------------------------------------
+        Gamma = pm.TruncatedNormal("Gamma", mu=16.5, sigma=1.0, lower=1.0)
+        C = pm.Beta("C", alpha=40, beta=160)
     
-        # From 0-1, average of 0.3, weighted towards lower values
-        C = pm.TruncatedNormal("C",mu=0.2, sigma=0.1, lower=0.01, upper=1.0)
+        # ---------------------------------------
+        # Constant background
+        # ---------------------------------------
+        beta0 = pm.Normal("beta0", mu=float(np.mean(data)), sigma=10.0)
     
-        # Relatively well known parameter from prior ESR scans
-        Gamma = pm.Normal("Gamma", mu=16.5, sigma=1)
-    
-        noise=pm.Uniform("noise", lower=0, upper=10)
-        # implement the model using the known dipole parameters
-        mu_model, B_par, Delta = mean_fluorescence_dipole_pt(
+        # ---------------------------------------
+        # Signal model
+        # ---------------------------------------
+        mu_model_raw, B_par_raw, Delta_raw = mean_fluorescence_dipole_pt(
             X_data, Y_data, Z_data,
             x_d, y_d, z_d,
             mx, my, mz,
@@ -399,7 +427,16 @@ def dipole_posterior(data, extents, f_mw_true=2830, branch_sign = -1):
             branch_sign
         )
     
-        pm.StudentT("y_like", mu=mu_model,nu=1, sigma=noise, observed=y_out)
+        mu_model = pm.Deterministic("mu_model", mu_model_raw)
+        B_par = pm.Deterministic("B_par", B_par_raw)
+        Delta = pm.Deterministic("Delta", Delta_raw)
+    
+        # ---------------------------------------
+        # Noise
+        # ---------------------------------------
+        sigma = pm.HalfNormal("sigma", sigma=5.0)
+    
+        y_like = pm.Normal("y_like", mu=mu_model, sigma=sigma, observed=y_out)
 
     return nv_dipole_model
 
